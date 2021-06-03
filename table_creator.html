@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>表格生成器</title>
+  <link rel="stylesheet" href="./res/antd.min.css">
+  <style>
+    .ops {
+      padding: 40px;
+    }
+    .box {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border: 1px solid #ccc;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="app">
+    <div class="ops">
+      <a-form layout="inline">
+        <a-form-item
+          label="行"
+        >
+          <a-input-number v-model="row"></a-input-number>
+        </a-form-item>
+        <a-form-item
+          label="列"
+        >
+          <a-input-number v-model="col"></a-input-number>
+        </a-form-item>
+        <a-form-item
+          label="表格宽度"
+        >
+          <a-input-number v-model="tableWidth"></a-input-number>
+        </a-form-item>
+        <a-form-item
+          label="填充"
+        >
+          <a-select v-model="bgcolor">
+            <a-select-option value="">
+              <i class="box"></i>
+              无色
+            </a-select-option>
+            <a-select-option value="red">
+              <i class="box" style="background-color: red;"></i>
+              红
+            </a-select-option>
+            <a-select-option value="yellow">
+              <i class="box" style="background-color: yellow;"></i>
+              黄
+            </a-select-option>
+            <a-select-option value="blue">
+              <i class="box" style="background-color: blue;"></i>
+              蓝
+            </a-select-option>
+            <a-select-option value="green">
+              <i class="box" style="background-color: green;"></i>
+              绿
+            </a-select-option>
+          </a-select>
+        </a-form-item>
+        <a-form-item
+          label="输入内容"
+        >
+          <a-switch v-model="editable"></a-switch>
+        </a-form-item>
+        <a-form-item>
+          <a-button type="danger" :disabled="!isRect" @click="doMergeCells">合并单元格</a-button>
+        </a-form-item>
+        <a-form-item>
+          <a-button type="danger" :disabled="!isSplitAble" @click="doSplitCells">拆分单元格</a-button>
+        </a-form-item>
+        <a-form-item>
+          <a-button type="primary" @click="save">复制到剪切板</a-button>
+        </a-form-item>
+      </a-form>
+      <div style="margin-top: 10px;display: flex;justify-content: center;margin-top: 30px;">
+        <table 
+          id="table" 
+          :style="`border: 1px solid #e8e8e8;border-right: 0;border-bottom: 0;
+          width: ${tableWidth}px;
+          text-align: left;border-radius: 4px 4px 0 0;border-collapse: separate;border-spacing: 0;color: rgba(0,0,0,.65);font-size: 14px;font-variant: tabular-nums;line-height: 1.5;list-style: none;`"
+        >
+          <tbody :style="tbodyStyle">
+            <tr v-for="r in grid" :key="r.id" :style="trStyle">
+              <td 
+              v-for="d in r.tds" 
+              :key="d.id" 
+              :style="tdStyle" 
+              @click="tdClick(arguments[0], d)" 
+              :contenteditable="editable"
+              v-if="d.show"
+              :colspan="d.colSpan"
+              :rowspan="d.rowSpan"
+              >&nbsp;</td>
+            </tr>
+          </tbody>       
+        </table>
+      </div>
+    </div>
+  </div>
+  <script src="./res/moment.min.js"></script>
+  <script src="./res/vue.min.js"></script>
+  <script src="./res/antd.min.js"></script>
+  <script>
+    const tbodyStyle = `border-collapse: separate;border-spacing: 0;text-align: left;color: rgba(0,0,0,.65);font-size: 14px;font-variant: tabular-nums;line-height: 1.5;list-style: none;font-feature-settings: "tnum";box-sizing: border-box;`
+    const trStyle = `box-sizing: border-box;text-align: left;border-collapse: separate;border-spacing: 0;color: rgba(0,0,0,.65);font-size: 14px;font-variant: tabular-nums;line-height: 1.5;list-style: none;font-feature-settings: "tnum";`
+    const tdStyle = `border-right: 1px solid #e8e8e8;padding: 16px;overflow-wrap: break-word;border-bottom: 1px solid #e8e8e8;transition: all .3s,border 0s;word-break: break-word;box-sizing: border-box;border-collapse: separate;border-spacing: 0;text-align: left;color: rgba(0,0,0,.65);font-size: 14px;font-variant: tabular-nums;line-height: 1.5;list-style: none;font-feature-settings: "tnum";`
+    new Vue({
+      el: '#app',
+      data() {
+        return {
+          row: 4,
+          col: 4,
+          bgcolor: '',
+          editable: false,
+          tbodyStyle,
+          trStyle,
+          tdStyle,
+          tableWidth: 800,
+          mergedCells: []
+        }
+      },
+      computed: {
+        grid() {
+          const grid = []
+          for (let r = 0; r < this.row; r++) {
+            grid[r] = {tds: [], id: r}
+            for (let c = 0; c < this.col; c++) {
+              grid[r].tds.push({
+                id: r + '_' + c,
+                col: c,
+                row: r,
+                rowSpan: 1,
+                colSpan: 1,
+                show: true
+              })
+            }
+          }
+          return grid
+        },
+        dots() {
+          if (this.mergedCells.length < 2) return this.mergedCells
+          const dots = this.mergedCells.reduce((ret, b) => {
+            if (ret[b.row]) {
+              ret[b.row].push(b)
+            } else {
+              ret[b.row] = [b]
+            }
+            ret[b.row].sort((a, b) => a.col - b.col)
+            return ret
+          }, [])
+
+          while(!dots[0]) {
+            dots.shift()
+          }
+          return dots
+        },
+        isSplitAble() {
+          return this.mergedCells.length === 1 && (this.mergedCells[0].colSpan > 1 || this.mergedCells[0].rowSpan > 1)
+        },
+        isRect() {
+          if (this.mergedCells.length < 2) return false
+          
+          const dots = this.dots
+
+          if (dots.length !== dots.filter(e => e).length) {
+            console.log(dots)
+            console.log('有空行')
+            return false
+          }
+
+          if (Math.max(...dots.map(e => e.length)) !== Math.min(...dots.map(e => e.length))) {
+            console.log(dots)
+            console.log('列数不一致')
+            return false
+          }
+
+          if (Math.max(...dots.map(e => e[0].col)) !== Math.min(...dots.map(e => e[0].col))) {
+            console.log(dots)
+            console.log('开始不一致')
+            return false
+          }
+
+          if (Math.max(...dots.map(e => e[e.length - 1].col)) !== Math.min(...dots.map(e => e[e.length - 1].col))) {
+            console.log('结束不一致')
+            return false
+          }
+
+          return true
+        }
+      },
+      methods: {
+        tdClick(e, d) {
+          if(this.editable) {
+            if (this.bgcolor) {
+              e.target.style.backgroundColor = this.bgcolor
+            }
+            return
+          }
+          if (this.mergedCells.includes(d)) {
+            this.mergedCells.splice(this.mergedCells.indexOf(d), 1)
+            e.target.style.backgroundColor = ''
+          } else {
+            this.mergedCells.push(d)
+            e.target.style.backgroundColor = 'rgba(0, 0, 0, .05)'
+          }
+        },
+        save() {
+          const el = document.querySelector('#table')
+          this.copyToClipboard(el.outerHTML)
+          antd.message.info('已复制到剪切板')
+        },
+        copyToClipboard(txt) {
+          const tag = document.createElement('input')
+          tag.setAttribute('id', 'cp_input')
+          tag.value = txt
+          tag.style.opacity = '0'
+          document.body.appendChild(tag)
+          tag.select()
+          document.execCommand('copy')
+          tag.remove()
+        },
+        doMergeCells() {
+          if (!this.isRect) return
+          this.dots.forEach(row => {
+            row.forEach(dot => {
+              dot.rowSpan = 1
+              dot.colSpan = 1
+              dot.show = false
+            })
+          })
+          let target = this.dots[0][0]
+          if (!target) return
+          target.rowSpan = this.dots.length
+          target.colSpan = this.dots[0].length
+          target.show = true
+          this.mergedCells = []
+        },
+        doSplitCells() {
+
+        }
+      }
+    })
+  </script>
+</body>
+
+</html>
